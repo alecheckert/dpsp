@@ -36,14 +36,14 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
                             consider from each trajectory
         likelihood_mode :   str, either "binned" or "point", the 
                             type of likelihood to calculate
-
+    
     returns
     -------
         (
             2D ndarray of shape (n_tracks, n_bins), the likelihood
                 of each diffusion coefficient bin for each trajectory;
-            1D ndarray of shape (n_tracks,), one half the gamma degrees
-                of freedom for each trajectory (# dimensions * # jumps / 2.0);
+            1D ndarray of shape (n_tracks,), the number of jumps per
+                trajectory;
             1D ndarray of shape (n_tracks,), the indices of each 
                 trajectory
         )
@@ -74,7 +74,6 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
         S_doublets = np.asarray(S.loc[doublets, "sum_sq_jump"])
         S_nondoublets = np.asarray(S.loc[~doublets, "sum_sq_jump"])
         L_nondoublets = np.asarray(S.loc[~doublets, "deg_free"])
-        # doublets = np.asarray(doublets).astype(np.bool)
         
         for j in range(K-1):
 
@@ -92,8 +91,7 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
         # Scale by state occupations
         if not occupations is None:
             occupations = np.asarray(occupations)
-            lik = np.log(lik) + np.log(occupations)
-            lik = np.exp((lik.T - lik.max(axis=1)).T)
+            lik = lik * occupations
 
     # Evaluate the likelihood in a pointwise manner
     elif likelihood_mode == "point":
@@ -101,20 +99,23 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
         lik = np.zeros((n_tracks, K), dtype=np.float64)
 
         # Gamma degrees of freedom
-        L = np.asarray(S["n_jumps"]) * m / 2.0
+        L = np.asarray(S["deg_free"])
 
         # Sum of squared jumps in each trajectory
-        S = np.asarray(S["sum_sq_jump"])
+        sum_r2 = np.asarray(S["sum_sq_jump"])
 
         # Calculate the log likelihood of each state
         for j in range(K-1):
             phi = 4 * (diff_coefs[j] * frame_interval + le2)
-            lik[:,j] = -(S / phi) - L * np.log(phi)
+            lik[:,j] = -(sum_r2 / phi) - L * np.log(phi)
 
         # Scale by the state occupations, if desired
         if not occupations is None:
             occupations = np.asarray(occupations)
-            lik = lik + np.log(occupations)
+            nonzero = occupations > 0
+            log_occs = np.full(occupations.shape, -np.inf)
+            log_occs[nonzero] = np.log(occupations[nonzero])
+            lik = lik + log_occs 
 
         # Convert to likelihood
         lik = (lik.T - lik.max(axis=1)).T
@@ -123,4 +124,4 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
     # Normalize
     lik = (lik.T / lik.sum(axis=1)).T 
 
-    return lik, np.asarray(S["deg_free"]), np.asarray(S["trajectory"])
+    return lik, np.asarray(S["n_jumps"]), np.asarray(S["trajectory"])
