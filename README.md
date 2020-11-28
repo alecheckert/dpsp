@@ -5,8 +5,8 @@ Dirichlet process mixture models for single particle tracking
 
 `dpsp` is a Python analysis tool for single particle tracking (SPT) experiments. 
 SPT experiments generate "trajectories" - paths of individual molecules
-specified in spatial coordinates. In many cases, our trajectories aren't all the
-same, but represent molecules moving at different rates. A common goal in SPT analysis
+specified in spatial coordinates. In many cases, the trajectories aren't all the
+same: they come from molecules moving at different rates. A common goal in SPT analysis
 is to extract the number of different diffusive states in a set of trajectories,
 along with the fractional occupancy and diffusion coefficient (spatial variance)
 of each state.
@@ -121,7 +121,7 @@ A sample script that does something very similar is at
 ## Where can I get a description of the parameters for `dpsp`?
 
 In the future, under the `docs` folder of this repo. 
-For now, in the docstring to `dp.dpsp.py`.
+For now, in the docstring to the `dp.dpsp` function.
 
 The magic sauce here is `branch_prob`, which - if you're familiar with 
 Dirichlet processes - indirectly sets the concentration
@@ -135,7 +135,7 @@ and the concentration parameter is `alpha`, then
 ```
 
 `branch_prob` is the probability that, for any trajectory at any given 
-iteration, that trajectory will start a new component for the Dirichlet 
+iteration, the trajectory will start a new component for the Dirichlet 
 process Gibbs sampler. As a result, it determines the relative strength
 of the uniform prior over the diffusion coefficient against the data.
 The higher `branch_prob` is, the more skeptical we are about the data. 
