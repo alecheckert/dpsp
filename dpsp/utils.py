@@ -265,7 +265,7 @@ def concat_tracks(*tracks):
 
     return out
 
-def concat_tracks_files(*csv_paths, out_csv=None, start_frame=0,
+def load_tracks(*csv_paths, out_csv=None, start_frame=0,
     drop_singlets=False):
     """
     Given a set of trajectories stored as CSVs, concatenate all
