@@ -12,7 +12,7 @@ from .utils import (
     sum_squared_jumps
 )
 
-def likelihood_matrix(tracks, diff_coefs, occupations=None, 
+def likelihood_matrix(tracks, diff_coefs, posterior=None, 
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, 
     pos_cols=["y", "x"], max_jumps_per_track=None,
     likelihood_mode="binned"):
@@ -25,8 +25,9 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
         tracks          :   pandas.DataFrame
         diff_coefs      :   1D np.ndarray, diffusion coefficients in 
                             squared microns per second
-        occupations     :   1D np.ndarray, occupations of each diffusion
-                            coefficient bin
+        posterior       :   1D np.ndarray, occupations of each diffusion
+                            coefficient bin (for instance, the output of
+                            dpsp)
         frame_interval  :   float, seconds
         pixel_size_um   :   float, microns
         loc_error       :   float, microns (root variance)
@@ -89,9 +90,9 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
                 gammainc(L_nondoublets - 1, S_nondoublets / V1)) / (L_nondoublets - 1)
 
         # Scale by state occupations
-        if not occupations is None:
-            occupations = np.asarray(occupations)
-            lik = lik * occupations
+        if not posterior is None:
+            posterior = np.asarray(posterior)
+            lik = lik * posterior
 
     # Evaluate the likelihood in a pointwise manner
     elif likelihood_mode == "point":
@@ -110,11 +111,11 @@ def likelihood_matrix(tracks, diff_coefs, occupations=None,
             lik[:,j] = -(sum_r2 / phi) - L * np.log(phi)
 
         # Scale by the state occupations, if desired
-        if not occupations is None:
-            occupations = np.asarray(occupations)
-            nonzero = occupations > 0
-            log_occs = np.full(occupations.shape, -np.inf)
-            log_occs[nonzero] = np.log(occupations[nonzero])
+        if not posterior is None:
+            posterior = np.asarray(posterior)
+            nonzero = posterior > 0
+            log_occs = np.full(posterior.shape, -np.inf)
+            log_occs[nonzero] = np.log(posterior[nonzero])
             lik = lik + log_occs 
 
         # Convert to likelihood

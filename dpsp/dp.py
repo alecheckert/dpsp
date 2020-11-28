@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import dask
 from .defoc import f_remain 
-from .plot import diff_coef_spectrum
+from .plot import plot_diff_coef_spectrum
 from .utils import (
     assert_gs_dp_diff_exists,
     format_cl_args,
@@ -22,7 +22,7 @@ DEFAULT_DIFF_COEFS = np.logspace(-2.0, 2.0, 301)
 
 def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=None, m=10,
     m0=30, n_iter=200, burnin=20, frame_interval=0.00748,
-    pixel_size_um=0.16, loc_error=0.03, B=10000, max_jumps_per_track=None,
+    pixel_size_um=0.16, loc_error=0.03, B=20000, max_jumps_per_track=None,
     metropolis_sigma=0.1, n_threads=1, max_occ_weight=10000, dz=None,
     start_frame=None, pos_cols=["y", "x"], use_defoc_likelihoods=False,
     plot=False, out_png="default.png"):
@@ -267,9 +267,10 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=None, m=10,
 
     # Show some output plots
     if plot:
-        diff_coef_spectrum(posterior, diff_coefs, 
+        plot_diff_coef_spectrum(posterior, diff_coefs, 
             log_scale=True, out_png=out_png, ylim=None, 
-            d_err=(loc_error**2 / frame_interval))
+            d_err=(loc_error**2 / frame_interval), 
+            truncate_immobile_frac=True)
 
     # Return the posterior sum of Markov chain densities across
     # all threads, along with the binning scheme
