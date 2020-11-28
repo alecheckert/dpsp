@@ -27,7 +27,7 @@ This CSV must contain, at minimum, the following columns:
  - `y`, `x`, or other columns with the spatial coordinates of the detection
    **in pixels**
 
-See `samples/sample_tracks.csv` for an example of the kind of input
+See `examples/examples_tracks.csv` for an example of the kind of input
 `dpsp` expects.
 
 The output is a probability distribution over the diffusion coefficient.
@@ -94,7 +94,7 @@ If not, then you'll need to compile the `dpsp/cpp/gsdpdiff.cpp` and
     from dpsp import dpsp
 
     # A sample set of trajectories
-    sample_csv = "samples/sample_tracks.csv"
+    sample_csv = "examples/example_tracks.csv"
     tracks = pd.read_csv(sample_csv)
 
     # Run dpsp
@@ -116,7 +116,7 @@ If not, then you'll need to compile the `dpsp/cpp/gsdpdiff.cpp` and
 ```
 
 A sample script that does something very similar is at 
-`samples/sample_script.py`. 
+`examples/example_script.py`. 
 
 ## Where can I get a description of the parameters for `dpsp`?
 

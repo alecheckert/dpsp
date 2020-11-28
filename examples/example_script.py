@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-sample_script.py -- sample usage of dpsp to analyze
+example_script.py -- sample usage of dpsp to analyze
 some trajectories
 
 """
@@ -14,7 +14,7 @@ def run_analysis():
 
     """
     # Target files
-    track_csvs = ["sample_tracks.csv", "more_sample_tracks.csv"]
+    track_csvs = ["example_tracks.csv", "more_example_tracks.csv"]
 
     # Load trajectories into one dataframe
     tracks = load_tracks(
@@ -34,7 +34,8 @@ def run_analysis():
         n_threads=1,
         pos_cols=["y", "x"],
         dz=0.7,
-        plot=True
+        plot=True,
+        out_png="example_plots.png"
     )
 
 if __name__ == "__main__":
