@@ -153,6 +153,11 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     jumps = pd.DataFrame(jumps, columns=cols)
     n_tracks = jumps["trajectory"].nunique()
 
+    # Limit the number of jumps to consider per trajectory, if desired
+    if not max_jumps_per_track is None:
+        jumps = assign_index_in_track(jumps)
+        tracks = jumps[jumps["index_in_track"] >= max_jumps_per_track]
+
     # Output dataframe, indexed by trajectory
     sum_jumps = pd.DataFrame(index=np.arange(n_tracks), columns=out_cols)
 
@@ -192,6 +197,147 @@ def track_length(tracks):
         tracks.groupby("trajectory").size().rename("track_length"),
         on="trajectory"
     )
+
+def assign_index_in_track(tracks):
+    """
+    Given a set of trajectories, determine the index of each localization in the
+    context of its respective trajectory.
+
+    args
+    ----
+        tracks      :   pandas.DataFrame, containing the "trajectory" and "frame"
+                        columns
+
+    returns
+    -------
+        pandas.DataFrame, the same dataframe with a new column, "index_in_track"
+
+    """
+    tracks["one"] =  1
+    tracks["index_in_track"] = tracks.groupby("trajectory")["one"].cumsum() - 1
+    tracks = tracks.drop("one", axis=1)
+    return tracks 
+
+def concat_tracks(*tracks):
+    """
+    Join some trajectory dataframes together into a larger dataframe,
+    while preserving uniqe trajectory indices.
+
+    args
+    ----
+        tracks      :   pandas.DataFrame with the "trajectory" column
+
+    returns
+    -------
+        pandas.DataFrame, the concatenated trajectories
+
+    """
+    n = len(tracks)
+
+    # Sort the tracks dataframes by their size. The only important thing
+    # here is that if at least one of the tracks dataframes is nonempty,
+    # we need to put that one first.
+    df_lens = [len(t) for t in tracks]
+    try:
+        tracks = [t for _, t in sorted(zip(df_lens, tracks))][::-1]
+    except ValueError:
+        pass
+
+    # Iteratively concatenate each dataframe to the first while 
+    # incrementing the trajectory index as necessary
+    out = tracks[0].assign(dataframe_index=0)
+    c_idx = out["trajectory"].max() + 1
+
+    for t in range(1, n):
+
+        # Get the next set of trajectories and keep track of the origin
+        # dataframe
+        new = tracks[t].assign(dataframe_index=t)
+
+        # Ignore negative trajectory indices (facilitating a user filter)
+        new.loc[new["trajectory"]>=0, "trajectory"] += c_idx 
+
+        # Increment the total number of trajectories
+        c_idx = new["trajectory"].max() + 1
+
+        # Concatenate
+        out = pd.concat([out, new], ignore_index=True, sort=False)
+
+    return out
+
+def concat_tracks_files(*csv_paths, out_csv=None, start_frame=0,
+    drop_singlets=False):
+    """
+    Given a set of trajectories stored as CSVs, concatenate all
+    of them, storing the paths to the original CSVs in the resulting
+    dataframe, and optionally save the result to another CSV.
+
+    args
+    ----
+        csv_paths       :   list of str, a set of trajectory CSVs.
+                            Each must contain the "y", "x", "trajectory",
+                            and "frame" columns
+        out_csv         :   str, path to save to 
+        start_frame     :   int, exclude any trajectories that begin before
+                            this frame
+        drop_singlets   :   bool, drop singlet localizations before
+                            concatenating
+
+    returns
+    -------
+        pandas.DataFrame, the concatenated result
+
+    """
+    n = len(csv_paths)
+
+    def drop_before_start_frame(tracks, start_frame):
+        """
+        Drop all trajectories that start before a specific frame.
+
+        """
+        tracks = tracks.join(
+            (tracks.groupby("trajectory")["frame"].first() >= start_frame).rename("_take"),
+            on="trajectory"
+        )
+        tracks = tracks[tracks["_take"]]
+        tracks = tracks.drop("_take", axis=1)
+        return tracks
+
+    def drop_singlets_dataframe(tracks):
+        """
+        Drop all singlets and unassigned localizations from a 
+        pandas.DataFrame with trajectory information.
+
+        """
+        if start_frame != 0:
+            tracks = drop_before_start_frame(tracks, start_frame)
+
+        tracks = track_length(tracks)
+        tracks = tracks[np.logical_and(tracks["track_length"]>1,
+            tracks["trajectory"]>=0)]
+        return tracks 
+
+    # Load the trajectories into memory
+    tracks = []
+    for path in csv_paths:
+        if drop_singlets:
+            tracks.append(drop_singlets_dataframe(pd.read_csv(path)))
+        else:
+            tracks.append(pd.read_csv(path))
+
+    # Concatenate 
+    tracks = concat_tracks(*tracks)
+
+    # Map the original path back to each file
+    for i, path in enumerate(csv_paths):
+        tracks.loc[tracks["dataframe_index"]==i, "source_file"] = \
+            os.path.abspath(path)
+
+    # Optionally save concatenated trajectories to a new CSV
+    if not out_csv is None:
+        tracks.to_csv(out_csv, index=False)
+
+    return tracks 
 
 def assert_gs_dp_diff_exists(defoc=True):
     """
