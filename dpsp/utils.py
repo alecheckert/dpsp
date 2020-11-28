@@ -91,13 +91,13 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
 
         # Map the corresponding track lengths, track indices,
         # and frame indices back to each jump
-        vecs[:,:3] = T[:-j,:3]
-        vecs = vecs[take, :]
+        jumps[:,:3] = T[:-j,:3]
+        jumps = jumps[take, :]
 
         # Calculate the corresponding 2D squared jump and accumulate
-        if vecs.shape[0] > 0:
-            vecs[:,3] = (vecs[:,4:]**2).sum(axis=1)
-            target_jumps.append(vecs)
+        if jumps.shape[0] > 0:
+            jumps[:,3] = (jumps[:,4:]**2).sum(axis=1)
+            target_jumps.append(jumps)
 
     # Concatenate
     if len(target_jumps) > 0:
@@ -151,7 +151,7 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     # Format as a dataframe, indexed by jump
     cols = ["track_length", "trajectory", "frame", "sq_jump"] + list(pos_cols)
     jumps = pd.DataFrame(jumps, columns=cols)
-    n_tracks = jump["trajectory"].nunique()
+    n_tracks = jumps["trajectory"].nunique()
 
     # Output dataframe, indexed by trajectory
     sum_jumps = pd.DataFrame(index=np.arange(n_tracks), columns=out_cols)
@@ -166,7 +166,7 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     sum_jumps["trajectory"] = np.asarray(jumps.groupby("trajectory").apply(lambda i: i.name))
 
     # Map back the frame indices
-    sum_jumps["frame"] = np.asarray(jumps.groupby("frame").first())
+    sum_jumps["frame"] = np.asarray(jumps.groupby("trajectory")["frame"].first())
 
     return sum_jumps
 

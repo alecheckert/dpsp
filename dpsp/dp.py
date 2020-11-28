@@ -5,6 +5,7 @@ dp.py
 """
 import os
 import warnings
+import time 
 import numpy as np
 import pandas as pd
 import dask
@@ -19,11 +20,12 @@ from .utils import (
 # Default binning scheme
 DEFAULT_DIFF_COEFS = np.logspace(-2.0, 2.0, 301)
 
-def dpsp(tracks, diff_coefs=None, alpha=10.0, m=10, m0=30, n_iter=200,
-    burnin=20, frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03,
-    B=10000, max_jumps_per_track=None, metropolis_sigma=0.1, n_threads=1,
-    max_occ_weight=10000, dz=None, start_frame=None, pos_cols=["y", "x"],
-    use_defoc_likelihoods=False, plot=False, out_png="default.png"):
+def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=None, m=10,
+    m0=30, n_iter=200, burnin=20, frame_interval=0.00748,
+    pixel_size_um=0.16, loc_error=0.03, B=10000, max_jumps_per_track=None,
+    metropolis_sigma=0.1, n_threads=1, max_occ_weight=10000, dz=None,
+    start_frame=None, pos_cols=["y", "x"], use_defoc_likelihoods=False,
+    plot=False, out_png="default.png"):
     """
     Estimate the spectrum of diffusion coefficients present in a 
     set of trajectories using a Dirichlet process mixture model.
@@ -42,6 +44,11 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, m=10, m0=30, n_iter=200,
 
         alpha           :   float, the concentration parameter for 
                             the Dirichlet process 
+
+        branch_prob     :   float, alternative way to specify *alpha*.
+                            The fraction of the total number of trajectories
+                            in the dataset to use for *alpha*. If set,
+                            this overrides *alpha*.
 
         m               :   int, the number of samples to use when 
                             drawing from the prior 
@@ -143,27 +150,35 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, m=10, m0=30, n_iter=200,
     track_csv = "_TEMP.csv"
     jumps[["sum_sq_jump", "n_jumps"]].to_csv(track_csv, index=False, header=None)
 
+    # If the user wants to set the concentration parameter in terms
+    # of the branch probability, calculate the corresponding alpha 
+    if not branch_prob is None:
+        n_tracks = jumps["trajectory"].nunique()
+        alpha = branch_prob * n_tracks / (1.0 - branch_prob)
+        print("Calculated concentration parameter: %.3f" % alpha)
+
     # Calculate a discretized defocalization function, if explicitly 
     # considering defocalization to calculate state likelihoods at 
     # each iteration
+    bias_csv = "_TEMP_CORR.csv"
     if use_defoc_likelihoods or corr_defoc:
 
         # Evaluate the fraction of particles that are expected to remain 
         # inside the focal volume after one frame interval
-        f_remain = np.zeros(n_bins, dtype=np.float64)
+        corr = np.zeros(n_bins, dtype=np.float64)
 
         # Use the geometric mean of each diffusion coefficient bin to 
         # estimate the defocalization fraction for the whole bin
         Dgm = np.sqrt(diff_coefs[1:] * diff_coefs[:-1])
         for i, D in enumerate(Dgm):
-            f_remain[i] = f_remain(D, 1, frame_interval, dz)[0]
+            corr[i] = f_remain(D, 1, frame_interval, dz)[0]
 
         # Save to a CSV that can subsequently be passed to the Gibbs
         # sampler
         _out = pd.DataFrame(index=range(len(Dgm)), columns=["D", "f_remain"])
         _out["D"] = Dgm 
-        _out["f_remain"] = f_remain 
-        _out.to_csv("_TEMP_CORR.csv", index=False, header=None)
+        _out["f_remain"] = corr
+        _out.to_csv(bias_csv, index=False, header=None)
         del _out 
 
     # Format the call to the Gibbs sampler
@@ -223,7 +238,7 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, m=10, m0=30, n_iter=200,
     threads = [gb(i) for i in range(n_threads)]
     posterior = dask.compute(
         *threads,
-        scheduler=schedulers, 
+        scheduler=scheduler, 
         num_workers=n_threads
     )
 
@@ -236,7 +251,7 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, m=10, m0=30, n_iter=200,
     # Correct for defocalization bias
     if corr_defoc:
         nonzero = posterior > 0
-        posterior[nonzero] = posterior[nonzero] / f_remain[nonzero]
+        posterior[nonzero] = posterior[nonzero] / corr[nonzero]
 
     # Normalize
     if posterior.sum() > 0:

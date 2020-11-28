@@ -66,11 +66,11 @@ def diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
         )
 
     """
-    fontsize = 12
+    fontsize = 7
 
     # Figure layout
     if axes is None:
-        fig, axes = plt.subplots(figsize=(4, 2))
+        fig, axes = plt.subplots(figsize=(4, 1.5))
 
     # Use either the midpoint or the geometric mean of each 
     # bin, depending on whether we're working in linear or 
@@ -86,9 +86,9 @@ def diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
     # Make a vertical dotted line at a user-defined location
     if not d_err is None:
         axes.plot([d_err, d_err], [0, posterior.max()], color="k",
-            linestyle="--", label="$\\sigma_{loc}^{2}$ s$^{-1}$")
+            linestyle="--", label="Loc error limit")
         axes.legend(frameon=False, loc="upper right", 
-            prop={"size": 8})
+            prop={"size": min(fontsize, 8)})
 
     # Log scale
     if log_scale:
@@ -97,13 +97,17 @@ def diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
     # Axis labels
     axes.set_xlabel("Diffusion coefficient ($\mu$m$^{2}$ s$^{-1}$)",
         fontsize=fontsize)
-    axes.set_ylabel("Posterior density", fontsize=fontsize)
+    axes.set_ylabel("Posterior mean\ndensity", fontsize=fontsize)
 
     # Limit the y-axis 
     if not ylim is None:
         axes.set_ylim(ylim)
     else:
         axes.set_ylim((0, axes.get_ylim()[1]))
+    axes.set_xlim((diff_coefs.min(), diff_coefs.max()))
+
+    # Set tick font size
+    axes.tick_params(labelsize=fontsize)
 
     # Save, if desired
     if not out_png is None:
