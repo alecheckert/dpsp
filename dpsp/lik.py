@@ -14,7 +14,7 @@ from .utils import (
 
 def likelihood_matrix(tracks, diff_coefs, posterior=None, 
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, 
-    pos_cols=["y", "x"], max_jumps_per_track=None,
+    start_frame=None, pos_cols=["y", "x"], max_jumps_per_track=None,
     likelihood_mode="binned"):
     """
     For each of a set of trajectories, calculate the likelihood of 
@@ -31,6 +31,7 @@ def likelihood_matrix(tracks, diff_coefs, posterior=None,
         frame_interval  :   float, seconds
         pixel_size_um   :   float, microns
         loc_error       :   float, microns (root variance)
+        start_frame     :   int, ignore jumps before this frame
         pos_cols        :   list of str, columns in *tracks* with the 
                             coordinates of each detections in pixels
         max_jumps_per_track :   int, the maximum number of jumps to 
@@ -57,7 +58,8 @@ def likelihood_matrix(tracks, diff_coefs, posterior=None,
 
     # Compute the sum of squared jumps for each trajectory
     S = sum_squared_jumps(tracks, n_frames=1, pixel_size_um=pixel_size_um,
-        pos_cols=pos_cols, max_jumps_per_track=max_jumps_per_track)
+        pos_cols=pos_cols, max_jumps_per_track=max_jumps_per_track,
+        start_frame=start_frame)
     n_tracks = S["trajectory"].nunique()
 
     # Alpha parameter governing the gamma distribution over the 

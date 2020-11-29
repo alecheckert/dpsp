@@ -7,9 +7,9 @@ import sys
 import os
 import numpy as np 
 import pandas as pd 
-from scipy.ndimage import uniform_filter 
 import matplotlib.pyplot as plt 
 import seaborn as sns 
+from scipy.ndimage import gaussian_filter
 
 # Compute the likelihood of a set of diffusion coefficients,
 # given a set of trajectories
@@ -62,6 +62,31 @@ def kill_ticks(axes, spines=False, grid=False):
             axes.spines[s].set_visible(False)
     if grid:
         axes.grid(False)
+
+def circular_filter(im, radius):
+    """
+    Convolve an image with an circular kernel.
+
+    args
+    ----
+        im          :   2D ndarray
+        radius      :   float, radius of kernel in pixels
+
+    returns
+    -------
+        2D ndarray of shape im.shape
+
+    """
+    # Build the kernel
+    N, M = im.shape 
+    Y, X = np.indices((N, M))
+    kernel = (((Y-N//2)**2 + (X-M//2)**2) <= radius**2).astype(np.float64)
+    kernel /= kernel.sum()
+
+    # Convolve with the image
+    return np.fft.fftshift(np.fft.irfft2(
+        np.fft.rfft2(im) * np.fft.rfft2(kernel), s=im.shape
+    ))
 
 def try_add_scalebar(axes, pixel_size, units="um", fontsize=8,
     location="lower left"):
@@ -250,7 +275,7 @@ def plot_diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
         return fig, axes 
 
 def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
-    frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03,
+    frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, start_frame=None,
     pos_cols=["y", "x"], max_jumps_per_track=None, likelihood_mode="binned",
     group_labels=None, vmax=None, out_png=None, log_x_axis=True,
     label_by_file=False):
@@ -291,6 +316,7 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         frame_interval      :   float, seconds
         pixel_size_um       :   float, microns
         loc_error           :   float, root variance in microns
+        start_frame         :   int, ignore jumps before this frame
         pos_cols            :   list of str, columns in the trajectory 
                                 CSVs with spatial coordinates in pixels
         max_jumps_per_track :   str, the maximum number of jumps to consider
@@ -355,6 +381,7 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
                 frame_interval=frame_interval,
                 pixel_size_um=pixel_size_um,
                 loc_error=loc_error,
+                start_frame=start_frame,
                 pos_cols=pos_cols, 
                 max_jumps_per_track=max_jumps_per_track,
                 likelihood_mode=likelihood_mode
@@ -500,9 +527,10 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         return fig, ax 
 
 def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0.05,
-    filter_kernel_um=0.2, frame_interval=0.00748, pixel_size_um=0.16,
-    loc_error=0.03, pos_cols=["y", "x"], max_jumps_per_track=None,
-    cmap="viridis", vmax=None, fontsize=10, out_png=None):
+    filter_kernel_um=0.12, frame_interval=0.00748, pixel_size_um=0.16,
+    loc_error=0.03, start_frame=None, pos_cols=["y", "x"], max_jumps_per_track=None,
+    cmap="viridis", vmax=None, fontsize=10, out_png=None,
+    normalize_by_loc_density=False, normalize_diff_coefs_separately=False):
     """
     Visualize the likelihood of each of a set of diffusion coefficients
     as a function of the spatial position of each trajectory. Additionally,
@@ -522,6 +550,7 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
         frame_interval  :   float, seconds
         pixel_size_um   :   float, microns
         loc_error       :   float, root variance in microns
+        start_frame     :   int, ignore jumps before this frame
         pos_cols        :   list of str, the columns in *tracks* with the
                             spatial coordinates of each detection in 
                             pixels
@@ -532,6 +561,14 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
                             color scaling
         fontsize        :   int
         out_png         :   str, path to save plot to.
+        normalize_by_loc_density    :   bool, normalize the result
+                            by the number of localizations in the local
+                            neighborhood, so that the resulting color
+                            reflects the probability to pick a molecule
+                            with a given diffusion coefficient from that
+                            area.
+        normalize_diff_coefs_separately : bool, use a separate color
+                            scale for each diffusion coefficient.
 
     returns
     -------
@@ -564,6 +601,7 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
         frame_interval=frame_interval,
         pixel_size_um=pixel_size_um,
         loc_error=loc_error,
+        start_frame=start_frame,
         pos_cols=pos_cols,
         max_jumps_per_track=max_jumps_per_track,
         likelihood_mode="point"
@@ -579,6 +617,9 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
     L = pd.DataFrame(L, columns=diff_coef_indices, index=track_indices)
     for i in diff_coef_indices:
         tracks[likelihood_cols[i]] = tracks["trajectory"].map(L[i])
+
+    # Only consider points for which the likelihood is defined
+    tracks = tracks.loc[~pd.isnull(tracks[likelihood_cols[0]]), :]
 
     # Plot layout
     if np.sqrt(M) % 1.0 == 0:
@@ -605,13 +646,9 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
     # Bins for computing histograms
     bins_y = np.arange(y_min, y_max, bin_size_um)
     bins_x = np.arange(x_min, x_max, bin_size_um)
-    n_bins_y = bins_y.shape[0]
-    n_bins_x = bins_x.shape[0]
+    n_bins_y = bins_y.shape[0] - 1
+    n_bins_x = bins_x.shape[0] - 1
     filter_kernel = filter_kernel_um / bin_size_um
-
-    # Color scaling
-    if vmax is None:
-        vmax = np.percentile(tracks[likelihood_cols], 99)
 
     # Plot localization density
     loc_density = np.histogram2d(
@@ -619,7 +656,7 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
         tracks[pos_cols[1]],
         bins=(bins_y, bins_x)
     )[0].astype(np.float64)
-    density = uniform_filter(loc_density, filter_kernel)
+    density = gaussian_filter(loc_density, filter_kernel)
     S = ax[0,0].imshow(density, cmap="gray", vmin=0, 
         vmax=np.percentile(density, 99))
     cbar = plt.colorbar(S, ax=ax[0,0], shrink=0.5)
@@ -628,26 +665,51 @@ def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0
     ax[0,0].set_title("Localization density", fontsize=fontsize)
     try_add_scalebar(ax[0,0], bin_size_um, "um", fontsize=fontsize)
 
-    # Plot the likelihood maps
+    # Calculate a histogram of all localizations weighted by 
+    # the likelihood of each diffusion coefficient
+    H = np.zeros((len(diff_coefs), n_bins_y, n_bins_x), dtype=np.float64)
     for i, diff_coef in enumerate(diff_coefs):
 
         # Calculate a histogram of all localizations weighted by 
         # the likelihood of this particular diffusion coefficient
-        H = np.histogram2d(
+        H[i,:,:] = np.histogram2d(
             tracks[pos_cols[0]],
             tracks[pos_cols[1]], 
             bins=(bins_y, bins_x),
             weights=np.asarray(tracks[likelihood_cols[i]])
         )[0].astype(np.float64)
 
-        # Uniform filter
-        H = uniform_filter(H, filter_kernel)
+        # Smooth
+        H[i,:,:] = gaussian_filter(H[i,:,:], filter_kernel)
 
-        # Plot the result
+    # Normalize by the localization density, if desired. If 
+    # doing this, only show pixels that actually have enough
+    # nearby localizations to compute
+    if normalize_by_loc_density:
+        norm = H.sum(axis=0)
+        nonzero = norm > 0.000001
+        for i in range(len(diff_coefs)):
+            H[i,:,:][nonzero] = H[i,:,:][nonzero] / norm[nonzero]
+            H[i,:,:][~nonzero] = 0
+
+    # If *normalize_diff_coefs_separately* is set, then use 
+    # a separate color palette for each diffusion coefficient
+    if normalize_diff_coefs_separately:
+        vmax = [np.percentile(H[i,:,:], 99) for i in range(len(diff_coefs))]
+    else:
+        vmax = np.percentile(H, 99)
+        vmax = [vmax for i in range(len(diff_coefs))]
+
+    # Plot the likelihood maps
+    for i, diff_coef in enumerate(diff_coefs):
+
+        # The subplot to use
         j = i + 1
         ax_x = j % nx 
         ax_y = j // nx 
-        S = ax[ax_y, ax_x].imshow(H, cmap=cmap, vmin=0, vmax=vmax)
+
+        # Make an imshow plot
+        S = ax[ax_y, ax_x].imshow(H[i,:,:], cmap=cmap, vmin=0, vmax=vmax[i])
 
         # Color bar
         cbar = plt.colorbar(S, ax=ax[ax_y, ax_x], shrink=0.5)
