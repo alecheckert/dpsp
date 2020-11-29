@@ -40,7 +40,7 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
                           the jump
             jumps[:,3] -> sum of squared jumps across all spatial dimensions
                           in squared microns
-            jumps[:,4] -> Euclidean jumps in each dimension in microns
+            jumps[:,4:] -> Euclidean jumps in each dimension in microns
 
     """
     def bail():
@@ -156,7 +156,7 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     # Limit the number of jumps to consider per trajectory, if desired
     if not max_jumps_per_track is None:
         jumps = assign_index_in_track(jumps)
-        tracks = jumps[jumps["index_in_track"] >= max_jumps_per_track]
+        tracks = jumps[jumps["index_in_track"] <= max_jumps_per_track]
 
     # Output dataframe, indexed by trajectory
     sum_jumps = pd.DataFrame(index=np.arange(n_tracks), columns=out_cols)

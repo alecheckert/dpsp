@@ -51,7 +51,7 @@ def make_example_plots():
         pixel_size_um=0.16,
         loc_error=0.035,
         label_by_file=True,
-        out_png="example_plot_likelihood_by_file.png"
+        out_png="example_plot_likelihood_by_file.png",
     )
 
     # Show the likelihood of each of a set of diffusion

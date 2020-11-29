@@ -9,13 +9,14 @@ import numpy as np
 import pandas as pd
 from scipy.special import gammainc, expi
 from .utils import (
+    squared_jumps,
     sum_squared_jumps
 )
 
 def likelihood_matrix(tracks, diff_coefs, posterior=None, 
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, 
     start_frame=None, pos_cols=["y", "x"], max_jumps_per_track=None,
-    likelihood_mode="binned"):
+    likelihood_mode="binned", by_jump=False):
     """
     For each of a set of trajectories, calculate the likelihood of 
     each of a set of diffusion coefficients.
@@ -38,6 +39,9 @@ def likelihood_matrix(tracks, diff_coefs, posterior=None,
                             consider from each trajectory
         likelihood_mode :   str, either "binned" or "point", the 
                             type of likelihood to calculate
+        by_jump         :   bool, calculate likelihood on a jump-by-jump
+                            basis, which does not make the assumption that
+                            trajectories stay in the same state
     
     returns
     -------
@@ -56,11 +60,34 @@ def likelihood_matrix(tracks, diff_coefs, posterior=None,
     diff_coefs = np.asarray(diff_coefs)
     K = diff_coefs.shape[0]
 
+    # Split each trajectory into separate jumps, which are treated
+    # separately
+    if by_jump:
+
+        # Calculate all of the jumps in the dataset
+        jumps = squared_jumps(tracks, n_frames=1, start_frame=start_frame, 
+            pixel_size_um=pixel_size_um, pos_cols=pos_cols)
+
+        # Format as a dataframe
+        S = pd.DataFrame(jumps[:,:4],
+            columns=["track_length", "trajectory", "frame", \
+                "sum_sq_jump"])
+        S["n_jumps"] = 1.0
+
+        # Limit the number of jumps to consider per trajectory,
+        # if desired
+        if (not max_jumps_per_track is None) and (not max_jumps_per_track is np.inf):
+            S = assign_index_in_track(S)
+            S = S[S["index_in_track"] <= max_jumps_per_track]
+
+        n_tracks = len(S)
+
     # Compute the sum of squared jumps for each trajectory
-    S = sum_squared_jumps(tracks, n_frames=1, pixel_size_um=pixel_size_um,
-        pos_cols=pos_cols, max_jumps_per_track=max_jumps_per_track,
-        start_frame=start_frame)
-    n_tracks = S["trajectory"].nunique()
+    else:
+        S = sum_squared_jumps(tracks, n_frames=1, pixel_size_um=pixel_size_um,
+            pos_cols=pos_cols, max_jumps_per_track=max_jumps_per_track,
+            start_frame=start_frame)
+        n_tracks = S["trajectory"].nunique()
 
     # Alpha parameter governing the gamma distribution over the 
     # sum of squared jumps

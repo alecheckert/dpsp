@@ -276,9 +276,9 @@ def plot_diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
 
 def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, start_frame=None,
-    pos_cols=["y", "x"], max_jumps_per_track=None, likelihood_mode="binned",
+    pos_cols=["y", "x"], max_jumps_per_track=None, likelihood_mode="point",
     group_labels=None, vmax=None, out_png=None, log_x_axis=True,
-    label_by_file=False):
+    label_by_file=False, by_jump=False):
     """
     Plot the diffusion coefficient likelihood for several different
     tracking files alongside each other, for comparison.
@@ -328,6 +328,11 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         out_png             :   str, output file
         log_x_axis          :   bool, use a log scale for the x-axis
         label_by_file       :   bool, indicate the origin file for each row
+        by_jump             :   bool, compute likelihoods on a jump-by-jump 
+                                basis rather than a trajectory-by-trajectory
+                                basis. This removes the assumption that 
+                                trajectories remain in the same diffusive state,
+                                at the cost of resolution.
 
     returns
     -------
@@ -384,7 +389,8 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
                 start_frame=start_frame,
                 pos_cols=pos_cols, 
                 max_jumps_per_track=max_jumps_per_track,
-                likelihood_mode=likelihood_mode
+                likelihood_mode=likelihood_mode,
+                by_jump=by_jump
             )
 
             # Scale likelihoods by the number of jumps per trajectory
