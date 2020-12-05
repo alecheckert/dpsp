@@ -13,10 +13,16 @@ from scipy.ndimage import gaussian_filter
 
 # Compute the likelihood of a set of diffusion coefficients,
 # given a set of trajectories
-from .lik import likelihood_matrix
+from .lik import (
+    likelihood_matrix,
+    likelihood_matrix_fbm
+)
 
 # Calculate trajectory length
-from .utils import track_length
+from .utils import track_length, load_tracks
+
+# Defocalization
+from .defoc import f_remain
 
 # Set the default font to Arial
 import matplotlib
@@ -278,7 +284,8 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, start_frame=None,
     pos_cols=["y", "x"], max_jumps_per_track=None, likelihood_mode="point",
     group_labels=None, vmax=None, out_png=None, log_x_axis=True,
-    label_by_file=False, by_jump=False):
+    label_by_file=False, by_jump=False, scale_colors_by_group=False,
+    vmax_perc=99, dz=None):
     """
     Plot the diffusion coefficient likelihood for several different
     tracking files alongside each other, for comparison.
@@ -333,6 +340,15 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
                                 basis. This removes the assumption that 
                                 trajectories remain in the same diffusive state,
                                 at the cost of resolution.
+        scale_colors_by_group:  bool, if using a list-of-lists for *track_csvs*,
+                                scale the color map for each subgroup separately.
+        vmax_perc           :   float between 0 and 100, percentile of likelihood
+                                values to use as the upper limit for the color map.
+                                If setting the upper limit for the color map 
+                                manually with *vmax*, this has no meaning.
+        dz                  :   float, focal depth in microns. If set, 
+                                a defocalization correction is applied to account
+                                for the loss of the free states.
 
     returns
     -------
@@ -397,6 +413,13 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
             # and aggregate across all trajectories
             L[i,:] = (track_likelihoods.T * n_jumps).T.sum(axis=0)
 
+        # Correct for defocalization, if applicable
+        if (not dz is None) and (not dz is np.inf):
+            corr = np.zeros(L.shape[1], dtype=np.float64)
+            for j, D in enumerate(diff_coefs):
+                corr[j] = f_remain(D, 1, frame_interval, dz)[0]
+            L = L / corr 
+
         # Normalize across all diffusion coefficients for each file
         L = (L.T / L.sum(axis=1)).T 
 
@@ -406,7 +429,7 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         fig, ax = plt.subplots(figsize=(x_ext, y_ext))
         fontsize = 8
         if vmax is None:
-            vmax = np.percentile(L, 99)
+            vmax = np.percentile(L, vmax_perc)
 
         # Make the primary plot
         S = ax.imshow(L, vmin=0, vmax=vmax,
@@ -416,6 +439,7 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         # Colorbar
         cbar = plt.colorbar(S, ax=ax, shrink=0.6)
         cbar.ax.tick_params(labelsize=fontsize)
+        cbar.set_label("Aggregate likelihood", rotation=90)
 
         # Make the x-axis a log scale
         if log_x_axis:
@@ -482,20 +506,33 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
                 # and aggregate across all trajectories
                 L[i,:] = (track_likelihoods.T * n_jumps).T.sum(axis=0)
 
+            # Correct for defocalization, if applicable
+            if (not dz is None) and (not dz is np.inf):
+                corr = np.zeros(L.shape[1], dtype=np.float64)
+                for j, D in enumerate(diff_coefs):
+                    corr[j] = f_remain(D, 1, frame_interval, dz)[0]
+                L = L / corr 
+
             # Normalize across all diffusion coefficients for each file
             L = (L.T / L.sum(axis=1)).T 
             L_matrices.append(L)
 
         # Global color scalar
-        if vmax is None:
-            vmax = max([L.max() for L in L_matrices])
+        if (not vmax is None):
+            vmax = [vmax for i in range(len(L_matrices))]
+        elif (vmax is None) and (scale_colors_by_group):
+            vmax = [np.percentile(L, vmax_perc) for L in L_matrices]
+        elif (vmax is None) and (not scale_colors_by_group):
+            vmax = max([np.percentile(L, vmax_perc) for L in L_matrices])
+            vmax = [vmax for i in range(len(L_matrices))]
 
         # Make the primary plot
         for i, L in enumerate(L_matrices):
-            S = ax[i].imshow(L, vmin=0, vmax=vmax, extent=(0, x_ext, 0, y_ext_subplot),
+            S = ax[i].imshow(L, vmin=0, vmax=vmax[i], extent=(0, x_ext, 0, y_ext_subplot),
                 origin="lower")
             cbar = plt.colorbar(S, ax=ax[i], shrink=0.6)
             cbar.ax.tick_params(labelsize=fontsize)
+            cbar.set_label("Aggregate likelihood", rotation=90)
 
             # Make the x-axis a log scale
             if log_x_axis:
@@ -531,6 +568,141 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         save_png(out_png, dpi=800)
     else:
         return fig, ax 
+
+def plot_likelihood_fbm(*track_csvs, hurst_pars=None, diff_coefs=None,
+    posterior=None, frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, 
+    start_frame=None, pos_cols=["y", "x"], max_jumps_per_track=None,
+    min_jumps_per_track=1, vmax=None, out_png=None, log_x_axis=True,
+    vmax_perc=99, weight_by="jump", cmap="viridis", fontsize=10,
+    axes=None, dz=None):
+    """
+    Plot the likelihood function for fractional Brownian motion as a 
+    function of the Hurst parameter and diffusion coefficient. All 
+    trajectories are pooled to evaluate the likelihood.
+
+    args
+    ----
+        tracks_csvs         :   variadic set of str, paths to 
+                                trajectory files to use
+        hurst_pars          :   1D ndarray, the set of Hurst 
+                                parameters at which to evaluate
+                                the likelihoods. If not set, 
+                                goes to a default scheme.
+        diff_coefs          :   1D ndarray, the set of diffusion
+                                coefficients at which to evaluate
+                                the likelihoods. If not set, 
+                                goes to a default scheme.
+        posterior           :   2D ndarray of shape (n_hurst,
+                                n_diff_coefs), the posterior
+                                probabilities for each of the 
+                                states. If not set, assumes a 
+                                uniform prior.
+        frame_interval      :   float, seconds
+        pixel_size_um       :   float, microns
+        loc_error           :   float, root variance in microns
+        start_frame         :   int, disregard jumps before this 
+                                frame
+        pos_cols            :   list of str
+        max_jumps_per_track :   int
+        min_jumps_per_track :   int
+        vmax                :   float, upper limit for the 
+                                color scheme
+        out_png             :   str, file to save figure to
+        log_x_axis          :   bool, use a log x-axis
+        vmax_perc           :   float, the percentile of likelihood
+                                to use to set the upper color scheme
+                                limit, if *vmax* is None
+        weight_by           :   str, either "jump" or "trajectory"
+        cmap                :   str
+        fontsize            :   int
+        axes                :   matplotlib.axes.Axes, an existing axes
+                                to plot to
+        dz                  :   float, focal depth in microns. If set,
+                                a defocalization correction is applied.
+
+    returns
+    -------
+        If *out_png* is set, saves directly to a PNG file. 
+        Otherwise returns
+        (
+            matplotlib.figure.Figure,
+            matplotlib.axes.Axes
+        )
+
+    """
+    # Load all of the trajectories from the target files
+    tracks = load_tracks(*track_csvs, start_frame=start_frame,
+        drop_singlets=True)
+
+    # Use the default binning scheme, if none is provided
+    if (diff_coefs is None):
+        diff_coefs = DEFAULT_DIFF_COEFS.copy()
+    if (hurst_pars is None):
+        hurst_pars = np.arange(0.05, 1.0, 0.05)
+
+    # Calculate the likelihoods for each state
+    track_likelihoods, n_jumps, track_indices = likelihood_matrix_fbm(
+        tracks, hurst_pars, diff_coefs, posterior=posterior, 
+        frame_interval=frame_interval, pixel_size_um=pixel_size_um,
+        loc_error=loc_error, start_frame=start_frame, pos_cols=pos_cols,
+        max_jumps_per_track=max_jumps_per_track, 
+        min_jumps_per_track=min_jumps_per_track)
+
+    # If not given a matplotlib.axes.Axes, make one
+    if axes is None:
+        fig, axes = plt.subplots(figsize=(5, 2))
+
+    # Scale the trajectory likelihoods
+    if weight_by == "jump":
+        track_likelihoods = (track_likelihoods.T * n_jumps).T 
+
+    # Sum the likelihoods across all trajectories
+    sum_L = track_likelihoods.sum(axis=0)
+
+    # Calculate the color map maximum, if not provided
+    if vmax is None:
+        vmax = np.percentile(sum_L, vmax_perc)
+
+    # Plot the result
+    x_ext = 5.0
+    y_ext = 1.8
+    S = axes.imshow(sum_L, cmap=cmap, vmin=0, vmax=vmax,
+        extent=(0, x_ext, 0, y_ext), origin="lower")
+
+    # Color scale
+    cbar = plt.colorbar(S, ax=axes, shrink=0.6)
+    cbar.ax.tick_params(labelsize=fontsize)
+    cbar.set_label("Likelihood", rotation=90, fontsize=fontsize)
+
+    # Make the x-axis in terms of the log diffusion coefficients
+    if log_x_axis:
+        add_log_scale_imshow(axes, diff_coefs, fontsize=fontsize)
+    else:
+        n_labels = 7
+        nD = len(diff_coefs)
+        m = nD // n_labels 
+        xticks = np.arange(nD) * x_ext / nD + x_ext / (nD * 2.0)
+        axes.set_xticks(xticks)
+        axes.set_xticklabels(np.asarray(diff_coefs)[m//2::m].round(2), fontsize=fontsize)
+    axes.set_xlabel("Diffusion coefficient ($\mu$m$^{2}$ s$^{-1}$)",
+        fontsize=fontsize)
+
+    # y-axis labels
+    n_labels = 7
+    nH = len(hurst_pars)
+    y_indices = np.arange(nH)
+    m = nH // n_labels 
+    yticks = np.arange(nH) * y_ext / nH + y_ext / (nH * 2.0)
+    yticks = yticks[m//2::m]
+    axes.set_yticks(yticks)
+    axes.set_yticklabels(np.asarray(hurst_pars)[m//2::m].round(2), fontsize=fontsize)
+    axes.set_ylabel("Hurst parameter")
+
+    # Save, if desired
+    if (not out_png is None):
+        save_png(out_png, dpi=800)
+    else:
+        return plt.gcf(), axes 
 
 def plot_spatial_likelihood(track_csv, diff_coefs, posterior=None, bin_size_um=0.05,
     filter_kernel_um=0.12, frame_interval=0.00748, pixel_size_um=0.16,

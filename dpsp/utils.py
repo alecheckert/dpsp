@@ -47,7 +47,7 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
         return np.zeros((0, 6), dtype=np.float64)
 
     # If passed an empty dataframe, bail
-    if tracks.empty: bail()
+    if tracks.empty: return bail()
 
     # Do not modify the original dataframe
     tracks = tracks.copy()
@@ -65,7 +65,7 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
         tracks = tracks[tracks["frame"] >= start_frame]
 
     # If no trajectories remain, bail
-    if tracks.empty: bail()
+    if tracks.empty: return bail()
 
     # Convert from pixels to um
     tracks[pos_cols] *= pixel_size_um 
@@ -103,7 +103,7 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     if len(target_jumps) > 0:
         return np.concatenate(target_jumps, axis=0)
     else:
-        bail()
+        return bail()
 
 def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     pos_cols=["y", "x"], max_jumps_per_track=None):
@@ -295,11 +295,13 @@ def load_tracks(*csv_paths, out_csv=None, start_frame=0,
         Drop all trajectories that start before a specific frame.
 
         """
+        if start_frame is None:
+            start_frame = 0
         tracks = tracks.join(
             (tracks.groupby("trajectory")["frame"].first() >= start_frame).rename("_take"),
             on="trajectory"
         )
-        tracks = tracks[tracks["_take"]]
+        tracks = tracks[tracks["_take"]]  # culprit
         tracks = tracks.drop("_take", axis=1)
         return tracks
 
@@ -400,8 +402,8 @@ def format_cl_args(in_csv, out_csv, verbose=False, **kwargs):
         "loc_error": "l",
         "bias_csv": "i"
     }
-    executable = "gs_dp_diff_defoc" if kwargs.get( \
-        "use_defoc_likelihoods", False) else "gs_dp_diff"
+    executable = "gsdpdiffdefoc" if kwargs.get( \
+        "use_defoc_likelihoods", False) else "gsdpdiff"
     optstr = " ".join(["-{} {}".format(str(keymap.get(k)), str(kwargs.get(k))) \
         for k in kwargs.keys() if k in keymap.keys()])
     if verbose:
