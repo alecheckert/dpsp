@@ -20,7 +20,7 @@ from .utils import (
 # Default binning scheme
 DEFAULT_DIFF_COEFS = np.logspace(-2.0, 2.0, 301)
 
-def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=None, m=10,
+def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=0.1, m=10,
     m0=30, n_iter=200, burnin=20, frame_interval=0.00748,
     pixel_size_um=0.16, loc_error=0.03, B=20000, max_jumps_per_track=None,
     metropolis_sigma=0.1, n_threads=1, max_occ_weight=100, dz=None,
