@@ -341,6 +341,28 @@ int main (int argc, char *argv[]) {
 
                 // Give this new component the lowest unassigned component index
                 ci = argmin(B, c_active);
+
+                // If this exceeds the buffer size, bail
+                if ((ci == -1) or (ci >= B-1)) {
+                    f_out.close();
+                    delete [] c_occs;
+                    delete [] c_log_occs;
+                    delete [] c_params;
+                    delete [] c_exp_params;
+                    delete [] c_active;
+                    delete [] c_indices;
+                    delete [] components;
+                    delete [] ss;
+                    delete [] n_disps;
+                    delete [] candidate_params;
+                    delete [] candidate_log_L;
+                    delete [] candidate_L;
+                    std::cout << "\nWARNING: Buffer size (" << B << ") exceeded; terminating iteration\n";
+                    return 1;
+                }
+
+                // Record the index and initial number of jumps for this new 
+                // component
                 c_active[ci] = true;
                 components[i] = ci;
                 c_occs[ci] = track_n_disps;
