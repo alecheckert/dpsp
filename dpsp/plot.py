@@ -248,8 +248,8 @@ def plot_diff_coef_spectrum(posterior, diff_coefs, log_scale=True,
     if not d_err is None:
         axes.plot([d_err, d_err], [0, posterior.max()*1.3], color="k",
             linestyle="--", label="Loc error limit")
-        axes.legend(frameon=False, loc="upper right", 
-            prop={"size": min(fontsize, 8)})
+        # axes.legend(frameon=False, loc="upper right", 
+        #     prop={"size": min(fontsize, 8)})
 
     # Log scale
     if log_scale:
@@ -285,7 +285,7 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
     pos_cols=["y", "x"], max_jumps_per_track=None, likelihood_mode="point",
     group_labels=None, vmax=None, out_png=None, log_x_axis=True,
     label_by_file=False, by_jump=False, scale_colors_by_group=False,
-    vmax_perc=99, dz=None):
+    vmax_perc=99, dz=None, out_csv=None):
     """
     Plot the diffusion coefficient likelihood for several different
     tracking files alongside each other, for comparison.
@@ -349,6 +349,8 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         dz                  :   float, focal depth in microns. If set, 
                                 a defocalization correction is applied to account
                                 for the loss of the free states.
+        out_csv             :   str, a CSV to which to save the raw likelihoods
+                                for custom analysis 
 
     returns
     -------
@@ -388,8 +390,8 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         n = len(track_csvs)
 
         # Calculate the likelihoods of each diffusion coefficient
-        # for each file
         L = np.zeros((n, n_bins), dtype=np.float64)
+        L_matrices = []
         for i, track_csv in enumerate(track_csvs):
             tracks = pd.read_csv(track_csv)
 
@@ -422,6 +424,10 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
 
         # Normalize across all diffusion coefficients for each file
         L = (L.T / L.sum(axis=1)).T 
+
+        # Save a reference to the likelihood matrix for later saving, if desired
+        if not out_csv is None:
+            L_matrices.append(L)
 
         # Plot layout
         y_ext = 2.0
@@ -463,6 +469,27 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         # Axis title
         title = "Prior likelihood" if posterior is None else "Posterior likelihood"
         ax.set_title(title, fontsize=fontsize)
+
+        # Save these likelihoods, if desired
+        if not out_csv is None:
+            n_files, n_bins = L.shape
+            M = n_files * n_bins 
+            out_df_cols = ["origin_file", "diff_coef", "likelihood"]
+            out_df = pd.DataFrame(index=np.arange(M), columns=out_df_cols)           
+
+            for i in range(n_files):
+                start_bin = i * n_bins 
+                stop_bin = (i + 1) * n_bins 
+                match = out_df.index.isin(range(start_bin, stop_bin))
+
+                out_df.loc[match, "origin_file"] = track_csvs[i]
+                out_df.loc[match, "likelihood"] = L[i,:]
+                if likelihood_mode == "binned":
+                    out_df.loc[match, "diff_coef"] = diff_coefs[:-1]
+                elif likelihood_mode == "point":
+                    out_df.loc[match, "diff_coef"] = diff_coefs 
+
+            out_df.to_csv(out_csv, index=False)
 
     elif isinstance(track_csvs[0], list):
 
@@ -517,6 +544,8 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
             L = (L.T / L.sum(axis=1)).T 
             L_matrices.append(L)
 
+            print("Finished with group %d..." % group_idx)
+
         # Global color scalar
         if (not vmax is None):
             vmax = [vmax for i in range(len(L_matrices))]
@@ -562,6 +591,57 @@ def plot_likelihood_by_file(track_csvs, diff_coefs=None, posterior=None,
         # x label
         ax[-1].set_xlabel("Diffusion coefficient ($\mu$m$^{2}$ s$^{-1}$)", 
             fontsize=fontsize)
+
+        # Save these likelihood matrices, if desired
+        if not out_csv is None:
+
+            n_groups = len(L_matrices)
+            tot_n_files = sum([L.shape[0] for L in L_matrices])
+            tot_n_bins = sum([L.shape[1] for L in L_matrices])
+
+            # Output dataframe
+            M = sum([L.shape[0] * L.shape[1] for L in L_matrices])
+            out_df_cols = ["group_idx", "group_label", "diff_coef", "origin_file", "likelihood"]
+            out_df = pd.DataFrame(index=np.arange(M), columns=out_df_cols)
+
+            # Current DataFrame index 
+            c = 0
+
+            # Iterative through the file groups 
+            for i, L in enumerate(L_matrices):
+
+                # Number of files corresponding to this file group
+                n_files, n_bins = L.shape
+
+                for j in range(n_files):
+
+                    # The set of output DataFrame indices corresponding to this file
+                    match = out_df.index.isin(range(c, c+n_bins))
+
+                    # The index of the corresponding file group
+                    out_df.loc[match, "group_idx"] = i 
+
+                    # The label of the corresponding file group
+                    if not group_labels is None:
+                        out_df.loc[match, "group_label"] = group_labels[i]
+
+                    # The diffusion coefficient corresponding to the likelihoods
+                    if likelihood_mode == "binned":
+                        out_df.loc[match, "diff_coef"] = diff_coefs[:-1]
+                    elif likelihood_mode == "point":
+                        out_df.loc[match, "diff_coef"] = diff_coefs
+
+                    # The actual likelihood values
+                    out_df.loc[match, "likelihood"] = L[j,:]
+
+                    # The origin file
+                    out_df.loc[match, "origin_file"] = track_csvs[i][j]
+
+                    # Increment the index 
+                    c += n_bins 
+
+            # Save to the CSV
+            out_df.to_csv(out_csv, index=False)
 
     # Save if desired
     if not out_png is None:

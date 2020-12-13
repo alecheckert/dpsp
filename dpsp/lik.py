@@ -19,7 +19,7 @@ from .utils import (
 def likelihood_matrix(tracks, diff_coefs, posterior=None, 
     frame_interval=0.00748, pixel_size_um=0.16, loc_error=0.03, 
     start_frame=None, pos_cols=["y", "x"], max_jumps_per_track=None,
-    likelihood_mode="binned", by_jump=False):
+    likelihood_mode="point", by_jump=False):
     """
     For each of a set of trajectories, calculate the likelihood of 
     each of a set of diffusion coefficients.
@@ -119,7 +119,7 @@ def likelihood_matrix(tracks, diff_coefs, posterior=None,
 
             # Deal with everything else
             lik[~doublets, j] = (gammainc(L_nondoublets - 1, S_nondoublets / V0) - \
-                gammainc(L_nondoublets - 1, S_nondoublets / V1)) / (L_nondoublets - 1)
+                gammainc(L_nondoublets - 1, S_nondoublets / V1)) / gamma(L_nondoublets - 1)
 
         # Scale by state occupations
         if not posterior is None:
