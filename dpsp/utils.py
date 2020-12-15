@@ -105,8 +105,8 @@ def squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     else:
         return bail()
 
-def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
-    pos_cols=["y", "x"], max_jumps_per_track=None):
+def sum_squared_jumps(tracks, n_frames=1, start_frame=None, splitsize=None,
+    pixel_size_um=0.16, pos_cols=["y", "x"], max_jumps_per_track=None):
     """
     For each trajectory in a dataset, calculate the sum of its squared
     jumps across all spatial dimensions.
@@ -118,6 +118,8 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
         n_frames        :   int, the number of frame intervals over
                             which to compute the jumps
         start_frame     :   int, exclude jumps before this frame
+        splitsize       :   int, # jumps. If trajectories are longer than
+                            this, split them into shorter trajectories.
         pixel_size_um   :   float, the size of pixels in microns
         pos_cols        :   list of str, the columns in *tracks* that
                             have the spatial coordinates of each 
@@ -148,6 +150,11 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     if jumps.shape[0] == 0:
         return pd.DataFrame(index=[], columns=out_cols)
 
+    # If desired, split long trajectories into shorter ones
+    if (not splitsize is None) and (not splitsize is np.inf):
+        new_track_indices = split_jumps(jumps, splitsize)
+        jumps[:,1] = new_track_indices 
+
     # Format as a dataframe, indexed by jump
     cols = ["track_length", "trajectory", "frame", "sq_jump"] + list(pos_cols)
     jumps = pd.DataFrame(jumps, columns=cols)
@@ -174,6 +181,84 @@ def sum_squared_jumps(tracks, n_frames=1, start_frame=None, pixel_size_um=0.16,
     sum_jumps["frame"] = np.asarray(jumps.groupby("trajectory")["frame"].first())
 
     return sum_jumps
+
+def split_jumps(jumps, splitsize):
+    """
+    Split a set of long trajectories into shorter trajectories.
+
+    Example 1
+    ---------
+        If we have a trajectory of 6 jumps and 
+        splitsize = 3, then we split this trajectory into two 
+        trajectories of 3 jumps, comprising the first and second halves
+        of the original trajectory.
+
+    Example 2
+    ---------
+        If we have a trajectory of 10 jumps and splitsize = 4,
+        then we split this trajectory into 3 trajectories. The 
+        first two are 4 jumps each, and the third is the last 2
+        jumps of the original trajectory.
+
+    args
+    ----
+        jumps           :   2D ndarray, a set of trajectory-indexed
+                            jumps; output of *squared_jumps*
+        splitsize       :   int, the maximum size of a trajectory 
+                            after splitting
+
+    returns
+    -------
+        1D ndarray of shape (n_tracks), the indices of the 
+            new trajectories. These start from 0 and go to the 
+            highest new trajectory index; numerically they have 
+            no relation to the original trajectory indices.
+
+    """
+    # If passed empty input, return empty output
+    if jumps.shape[0] == 0:
+        return np.zeros(0, dtype=np.int64)
+
+    # The original set of trajectory indices
+    orig_indices = jumps[:,1].astype(np.int64)
+
+    # The set of modified trajectory indices
+    new_indices = np.zeros(orig_indices.shape[0], dtype=np.int64)
+
+    # The current (new) trajectory index 
+    c = 0
+
+    # The length of the current trajectory in # of jumps
+    L = 0
+
+    # Iterate through the original set of trajectory indices
+    prev_index = orig_indices[0]
+    for i, index in enumerate(orig_indices):
+
+        # Extend the existing trajectory
+        L += 1
+
+        # We're in the same original trajectory
+        if index == prev_index:
+
+            # Haven't exceeded the split trajectory size limit
+            if L < splitsize:
+                new_indices[i] = c 
+
+            # Break into a new trajectory
+            else:
+                L = 0
+                c += 1
+                new_indices[i] = c
+
+        # We've passed into a different original trajectory
+        else:
+            prev_index = index 
+            L = 0
+            c += 1
+            new_indices[i] = c 
+
+    return new_indices 
 
 def track_length(tracks):
     """

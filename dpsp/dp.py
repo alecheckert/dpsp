@@ -21,7 +21,7 @@ from .utils import (
 DEFAULT_DIFF_COEFS = np.logspace(-2.0, 2.0, 301)
 
 def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=0.1, m=10,
-    m0=30, n_iter=200, burnin=20, frame_interval=0.00748,
+    m0=30, n_iter=200, burnin=20, frame_interval=0.00748, splitsize=12,
     pixel_size_um=0.16, loc_error=0.03, B=20000, max_jumps_per_track=None,
     metropolis_sigma=0.1, n_threads=1, max_occ_weight=100, dz=None,
     start_frame=None, pos_cols=["y", "x"], use_defoc_likelihoods=False,
@@ -61,6 +61,9 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=0.1, m=10,
                             recording anything
 
         frame_interval  :   float, the time between frames in seconds
+
+        splitsize       :   int, # jumps. If trajectories are larger than this,
+                            split them into subtrajectories.
 
         pixel_size_um   :   float, the size of camera pixels in microns
 
@@ -134,7 +137,7 @@ def dpsp(tracks, diff_coefs=None, alpha=10.0, branch_prob=0.1, m=10,
 
     # Calculate the sum of squared jumps for every trajectory
     jumps = sum_squared_jumps(tracks, n_frames=1, start_frame=start_frame,
-        pixel_size_um=pixel_size_um, pos_cols=pos_cols,
+        splitsize=splitsize, pixel_size_um=pixel_size_um, pos_cols=pos_cols,
         max_jumps_per_track=max_jumps_per_track)
 
     # If there are no jumps detected, bail
