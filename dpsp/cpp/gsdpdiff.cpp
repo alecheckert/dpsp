@@ -34,6 +34,7 @@ following specification:
 #include <fstream>
 #include <random>
 #include <algorithm>
+#include <cstring>
 
 #include <cmath>
 #include <ctime>
